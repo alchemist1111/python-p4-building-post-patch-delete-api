@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 
-from flask import Flask, request, make_response
-from flask_sqlalchemy import SQLAlchemy
+from flask import Flask, request, make_response, jsonify
 from flask_migrate import Migrate
 
-from models import db, User, Review, Game
+from models import db, Bakery, BakedGood
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///app.db'
@@ -16,71 +15,83 @@ migrate = Migrate(app, db)
 db.init_app(app)
 
 @app.route('/')
-def index():
-    return "Index for Game/Review/User API"
+def home():
+    return '<h1>Bakery GET-POST-PATCH-DELETE API</h1>'
 
-@app.route('/games')
-def games():
+@app.route('/bakeries')
+def bakeries():
+    bakeries = [bakery.to_dict() for bakery in Bakery.query.all()]
+    return make_response(  bakeries,   200  )
 
-    games = []
-    for game in Game.query.all():
-        game_dict = {
-            "title": game.title,
-            "genre": game.genre,
-            "platform": game.platform,
-            "price": game.price,
-        }
-        games.append(game_dict)
+@app.route('/bakeries/<int:id>',methods=["GET","PATCH"])
+def bakery_by_id(id):
 
-    response = make_response(
-        games,
-        200
-    )
+    bakery = Bakery.query.filter_by(id=id).first()
 
-    return response
-
-@app.route('/games/<int:id>')
-def game_by_id(id):
-    game = Game.query.filter(Game.id == id).first()
+    if request.method == "GET":
+        bakery_serialized = bakery.to_dict()
+        return make_response ( bakery_serialized, 200  )
     
-    game_dict = game.to_dict()
+    elif request.method == "PATCH":
+        for attr in request.form:
+            setattr(bakery,attr,request.form.get(attr))
 
-    response = make_response(
-        game_dict,
-        200
-    )
+        db.session.add(bakery)
+        db.session.commit()
+        response = make_response(bakery.to_dict(),200)
+        return response
 
-    return response
+@app.route('/baked_goods/by_price')
+def baked_goods_by_price():
+    baked_goods_by_price = BakedGood.query.order_by(BakedGood.price.desc()).all()
+    baked_goods_by_price_serialized = [
+        bg.to_dict() for bg in baked_goods_by_price
+    ]
+    return make_response( baked_goods_by_price_serialized, 200  )
+   
 
-@app.route('/reviews')
-def reviews():
+@app.route('/baked_goods/most_expensive')
+def most_expensive_baked_good():
+    most_expensive = BakedGood.query.order_by(BakedGood.price.desc()).limit(1).first()
+    most_expensive_serialized = most_expensive.to_dict()
+    return make_response( most_expensive_serialized,   200  )
 
-    reviews = []
-    for review in Review.query.all():
-        review_dict = review.to_dict()
-        reviews.append(review_dict)
+@app.route("/baked_goods", methods=["GET","POST"])
+def baked_goods():
+    goods = BakedGood.query.all()
+    if request.method == "GET":
+        goods_dict = [good.to_dict() for good in goods]
+        response = make_response(goods_dict,200,{"Content-Type":"application/json"})
+        return response
+    
+    elif request.method == "POST":
+        good = BakedGood(
+            name = request.form.get("name"),
+            price = request.form.get("price"),
+            bakery_id = request.form.get("bakery_id")
+        )
+        db.session.add(good)
+        db.session.commit()
+        response = make_response(good.to_dict(),201)
+        return response
 
-    response = make_response(
-        reviews,
-        200
-    )
+@app.route("/baked_goods/<int:id>",methods = ["GET","DELETE"])
+def baked_good_by_id(id):
+    good = BakedGood.query.filter(BakedGood.id == id).first()
 
-    return response
+    if good:
+        if request.method == "GET":
+            response = make_response(good.to_dict(),200,{"Content-Type":"application/json"})
+            return response
+        elif request.method == "DELETE":
+            db.session.delete(good)
+            db.session.commit()
+            response_body = {"message":f"Baked good {id} deleted successfully"}
+            return make_response(response_body,200)
 
-@app.route('/users')
-def users():
-
-    users = []
-    for user in User.query.all():
-        user_dict = user.to_dict()
-        users.append(user_dict)
-
-    response = make_response(
-        users,
-        200
-    )
-
-    return response
+    else:
+        body = {"message":f"Good {id} not found"}
+        return make_response(body,404)
 
 if __name__ == '__main__':
     app.run(port=5555, debug=True)
